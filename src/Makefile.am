@@ -77,6 +77,11 @@ libfapolicyd_la_SOURCES += \
 
 endif
 
+if WITH_DEB
+libfapolicyd_la_SOURCES += library/deb-backend.c
+
+endif
+
 libfapolicyd_la_CFLAGS = $(fapolicyd_CFLAGS)
 libfapolicyd_la_LDFLAGS = $(fapolicyd_LDFLAGS) -lpthread
 
