@@ -74,9 +74,9 @@ static int add_file_to_backend(
     }
     size_t file_size = lseek(fd, 0, SEEK_END);
     lseek(fd, 0, SEEK_SET);
-    char* sha_digest = get_hash_from_fd2(fd, file_size);
+    char* sha_digest = get_hash_from_fd2(fd, file_size, 1);
     lseek(fd, 0, SEEK_SET);
-    char* md5_digest = get_hash_from_fd2(fd, file_size, false);
+    char* md5_digest = get_hash_from_fd2(fd, file_size, 0);
     close(fd);    
 
     if (strcmp(md5_digest, expected_md5) != 0) {
