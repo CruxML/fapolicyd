@@ -430,7 +430,7 @@ static ssize_t safe_read(int fd, char *buf, size_t size)
  * If there is an error with mmap, it will also return a NULL pointer.
  */
 static const char *degenerate_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-char *get_hash_from_fd2(int fd, size_t size, const bool is_sha=true)
+char *get_hash_from_fd2(int fd, size_t size, const int is_sha=1)
 {
 	unsigned char *mapped;
 	char *digest = NULL;
