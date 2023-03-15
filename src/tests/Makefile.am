@@ -35,5 +35,6 @@ deb_test_LDFLAGS = -pie -Wl,-z,relro -Wl,-z,now,-ldpkg
 deb_test_LDADD = ${top_builddir}/src/.libs/libfapolicyd.la
 deb_test_SOURCES = \
   deb_test.c \
+  ${top_srcdir}/src/library/file.c \
   ${top_srcdir}/src/library/backend-manager.c \
   ${top_srcdir}/src/library/deb-backend.c 

@@ -13,6 +13,7 @@
 #include "conf.h"
 #include "fapolicyd-backend.h"
 #include "llist.h"
+#include "file.h"
 
 const int kSha256BytesLength = 32;
 const int kSha256HexLength = 64;
@@ -57,31 +58,45 @@ struct _hash_record {
  * crafted file so they do not secure this backend.
 */
 static int add_file_to_backend(
-    const char* path, struct _hash_record *hashtable, const char* expected_md5) {
+    const char* path, struct _hash_record **hashtable, const char* expected_md5) {
     struct stat path_stat;
     stat(path, &path_stat);
 
     // If its not a regular file, skip.
     if (!S_ISREG(path_stat.st_mode)) {
+        msg(LOG_DEBUG, "\nNot regular file %s", path);
         return 1;
     }
     
     // Open the file and calculate sha256 and size.
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
-        msg(LOG_WARNING, "Could not open %s", path);
+        msg(LOG_WARNING, "\nCould not open %s", path);
         return 1;
     }
     size_t file_size = lseek(fd, 0, SEEK_END);
     lseek(fd, 0, SEEK_SET);
     char* sha_digest = get_hash_from_fd2(fd, file_size, 1);
+
+    if (sha_digest == NULL) {
+        msg(LOG_ERR, "\nSha digest returned NULL");
+        return 1;
+    }
+
     lseek(fd, 0, SEEK_SET);
     char* md5_digest = get_hash_from_fd2(fd, file_size, 0);
-    close(fd);    
+
+    if (md5_digest == NULL) {
+        free(sha_digest);
+        msg(LOG_ERR, "\nMD5 digest returned NULL");
+        return 1;
+    }
+
+    close(fd);
 
     if (strcmp(md5_digest, expected_md5) != 0) {
         msg(LOG_WARNING,
-            "Skipping %s as hash mismatched. Should be %s, got %s",
+            "\nSkipping %s as hash mismatched. Should be %s, got %s",
             path, expected_md5, md5_digest);
         free(sha_digest);
         free(md5_digest);
@@ -92,7 +107,7 @@ static int add_file_to_backend(
     char *data;
     if (asprintf(&data,
             DATA_FORMAT,
-            path,
+            SRC_DEB,
             file_size,
             sha_digest) == -1) {
         data = NULL;
@@ -105,17 +120,16 @@ static int add_file_to_backend(
         char key[kMaxKeyLength];
         snprintf(key, kMaxKeyLength - 1, "%s %s", path, data);
 
-        HASH_FIND_STR(hashtable, key, rcd );
+        HASH_FIND_STR(*hashtable, key, rcd );
 
         if (!rcd) {
             rcd = (struct _hash_record*) malloc(sizeof(struct _hash_record));
             rcd->key = strdup(key);
-            HASH_ADD_KEYPTR(hh, hashtable, rcd->key, strlen(rcd->key), rcd);
-            list_append(&deb_backend.list, path, data);
+            HASH_ADD_KEYPTR(hh, *hashtable, rcd->key, strlen(rcd->key), rcd);
+            list_append(&deb_backend.list, strdup(path), data);
         } else {
             free((void*)data);
         }
-        msg(LOG_DEBUG, "Added %s to database.", path);
         return 0;
     }
     return 1;
@@ -125,6 +139,7 @@ static int deb_load_list(const conf_t *conf) {
     
     list_empty(&deb_backend.list);
     struct _hash_record *hashtable = NULL;
+    struct _hash_record **hashtable_ptr = &hashtable;
     
     msg(LOG_INFO, "Loading debdb backend");
     
@@ -142,10 +157,12 @@ static int deb_load_list(const conf_t *conf) {
     struct pkg_array array;
     pkg_array_init_from_hash(&array);
 
-    msg(LOG_INFO, "Adding %d packages.", array.n_pkgs);
+    msg(LOG_INFO, "Computing hashes for %d packages.", array.n_pkgs);
 
     for (int i = 0; i < array.n_pkgs; i++) {
         struct pkginfo *package = array.pkgs[i];
+        printf("\x1b[2K\rPackage %d / %d : %s", i + 1, array.n_pkgs, package->set->name);
+        parse_filehash(package, &package->installed);
         if (package->status != PKG_STAT_INSTALLED) {
             continue;
         }
@@ -164,12 +181,21 @@ static int deb_load_list(const conf_t *conf) {
             const char *path = (namenode->divert && !namenode->divert->camefrom) ?
                 namenode->divert->useinstead->name : namenode->name;
             if (hash != NULL) {
-                add_file_to_backend(path, hashtable, hash);
+                add_file_to_backend(path, hashtable_ptr, hash);
             }
             file = file->next;
         }
     }
-    
+
+    msg(LOG_INFO, "\nDone. Cleaning up ...");
+
+    struct _hash_record *item, *tmp;
+	HASH_ITER( hh, hashtable, item, tmp) {
+		HASH_DEL( hashtable, item );
+		free((void*)item->key);
+        free((void*)item);
+	}
+
     pkg_array_destroy(&array);
     modstatdb_shutdown();
     return 0;
